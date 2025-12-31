@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-stream-backend
+
+openai:
+  api-key: ${OPENAI_API_KEY}
+  model: gpt-4o-mini-transcribe
+
+elevenlabs:
+  api-key: ${ELEVEN_LABS_KEY}
+  default-voice: 21m00Tcm4TlvDq8ikWAM
+
+audio:
+  sample-rate: 16000
+  chunk-ms: 400
+
+persona:
+  default: LIFE_COACH

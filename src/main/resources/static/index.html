@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voice Assistant Test</title>
+</head>
+<body>
+<h1>Voice Assistant WebSocket Test</h1>
+<button id="connectBtn">Connect</button>
+<button id="sendBtn">Send Audio Chunk</button>
+
+<script>
+    let ws;
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    document.getElementById('connectBtn').addEventListener('click', () => {
+        ws = new WebSocket("ws://localhost:8080/ws/audio");
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => console.log("✅ Connected to WebSocket");
+        ws.onclose = () => console.log("❌ WebSocket closed");
+        ws.onerror = e => console.error("WebSocket error:", e);
+
+        ws.onmessage = async (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                const audioData = event.data;
+                playAudio(audioData);
+            } else {
+                console.log("Received:", event.data);
+            }
+        };
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("WebSocket is not connected!");
+            return;
+        }
+
+        // Send dummy audio bytes (can be anything for mock)
+        const dummyBytes = new Uint8Array([1, 2, 3, 4]);
+        ws.send(dummyBytes);
+        console.log("Sent dummy audio chunk");
+    });
+
+    function playAudio(arrayBuffer) {
+        audioContext.decodeAudioData(arrayBuffer)
+            .then(buffer => {
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start();
+            })
+            .catch(err => console.error("Failed to play audio:", err));
+    }
+</script>
+</body>
+</html>
