@@ -5,8 +5,12 @@ import com.aistream.model.Persona;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
+
 @Service
 public class StreamingLLMService {
+
+    private static final boolean MOCK = true;
 
     private final OpenAIClient openAIClient;
 
@@ -15,6 +19,9 @@ public class StreamingLLMService {
     }
 
     public Flux<String> streamResponse(Persona persona, String userText) {
+        if (MOCK) {
+            return mockStreamResponse();
+        }
 
         String json = """
         {
@@ -31,5 +38,14 @@ public class StreamingLLMService {
         );
 
         return openAIClient.streamChatCompletion(json);
+    }
+
+    public Flux<String> mockStreamResponse() {
+        String response = "Hello! This is a mocked AI response streaming to you.";
+        String[] tokens = response.split(" ");
+
+        // Emit one token every 200ms
+        return Flux.fromArray(tokens)
+                .delayElements(Duration.ofMillis(200));
     }
 }
