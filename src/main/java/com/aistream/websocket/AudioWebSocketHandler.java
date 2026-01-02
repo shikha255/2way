@@ -1,65 +1,57 @@
 package com.aistream.websocket;
 
-import com.aistream.clients.ElevenLabsClient;
 import com.aistream.model.Persona;
-import com.aistream.clients.OpenAIClient;
 import com.aistream.service.PersonaService;
+import com.aistream.service.StreamingLLMService;
+import com.aistream.service.StreamingSTTService;
+import com.aistream.service.StreamingTTSService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.BinaryWebSocketHandler;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 @Component
 public class AudioWebSocketHandler extends BinaryWebSocketHandler {
 
-    private final OpenAIClient openAIClient;
-    private final ElevenLabsClient elevenLabsClient;
+    private final StreamingSTTService sttService;
+    private final StreamingLLMService llmService;
+    private final StreamingTTSService ttsService;
     private final PersonaService personaService;
 
     public AudioWebSocketHandler(
-            OpenAIClient openAIClient,
-            ElevenLabsClient elevenLabsClient,
+            StreamingSTTService sttService,
+            StreamingLLMService llmService,
+            StreamingTTSService ttsService,
             PersonaService personaService
     ) {
-        this.openAIClient = openAIClient;
-        this.elevenLabsClient = elevenLabsClient;
+        this.sttService = sttService;
+        this.llmService = llmService;
+        this.ttsService = ttsService;
         this.personaService = personaService;
     }
 
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
-        Persona persona = personaService.getDefaultPersona();
-        byte[] dummyAudio = new byte[0];
-        Mono<String> transcriptMono = openAIClient.mockTranscription(dummyAudio);
 
-        transcriptMono
-                .flatMapMany(transcript -> {
-                    if (transcript.isBlank()) return Flux.empty();
-                    return openAIClient.mockStreamResponse(transcript);
-                })
-                .flatMap(token -> {
-                    // Convert each LLM token to audio using TTS with persona
-                    // return elevenLabsClient.textToSpeech(token, persona)
-                    return elevenLabsClient.mockTextToSpeech(token).flux();
-                })
+        Persona persona = personaService.getDefaultPersona();
+        sttService.addAudioChunk(message.getPayload().array());
+
+        sttService.processBufferedAudio()
+                .flatMapMany(text -> llmService.streamResponse(persona, text))
+                .flatMap(token -> ttsService.streamAudio(token, persona))
                 .flatMap(audioBytes -> {
                     if (!session.isOpen()) return Mono.empty();
                     try {
-                        session.sendMessage(new BinaryMessage(ByteBuffer.wrap(audioBytes)));
-                    } catch (Exception e) {
+                        session.sendMessage(new BinaryMessage(audioBytes));
+                    } catch (IOException e) {
                         e.printStackTrace();
                     }
                     return Mono.empty();
                 })
-                .subscribeOn(Schedulers.boundedElastic())
-                .subscribe(
-                        null,
-                        Throwable::printStackTrace
-                );
+                .subscribe();
     }
 }

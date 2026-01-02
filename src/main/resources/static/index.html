@@ -2,56 +2,199 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Voice Assistant Test</title>
+    <title>🎙 Voice Assistant Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f2f5;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            color: #4a90e2;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #connectBtn { background: #4caf50; color: white; }
+        #sendBtn { background: #2196f3; color: white; }
+        #stopBtn { background: #f44336; color: white; }
+        #status { font-weight: bold; margin-top: 10px; }
+        #log {
+            border: 1px solid #ccc;
+            background: white;
+            height: 200px;
+            overflow-y: scroll;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        #audioBar {
+            width: 100%;
+            height: 20px;
+            background: #eee;
+            margin-top: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        #audioProgress {
+            height: 100%;
+            width: 0%;
+            background: #4caf50;
+            transition: width 0.1s linear;
+        }
+    </style>
 </head>
 <body>
-<h1>Voice Assistant WebSocket Test</h1>
-<button id="connectBtn">Connect</button>
-<button id="sendBtn">Send Audio Chunk</button>
+<h1>🎙 Voice Assistant WebSocket Test</h1>
+
+<div>
+    <button id="connectBtn">Connect</button>
+    <button id="sendBtn" disabled>Send Audio Chunk</button>
+    <button id="stopBtn" disabled>Stop Audio</button>
+</div>
+
+<p id="status">Status: Disconnected</p>
+
+<div id="audioBar">
+    <div id="audioProgress"></div>
+</div>
+
+<div id="log"></div>
 
 <script>
     let ws;
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let audioContext;
+    let currentSource = null;
+    let animationId = null;
 
-    document.getElementById('connectBtn').addEventListener('click', () => {
+    const connectBtn = document.getElementById("connectBtn");
+    const sendBtn = document.getElementById("sendBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const audioProgress = document.getElementById("audioProgress");
+
+    function log(message) {
+        const time = new Date().toLocaleTimeString();
+        logEl.innerHTML += `[${time}] ${message}<br>`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    connectBtn.addEventListener("click", async () => {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume();
+
         ws = new WebSocket("ws://localhost:8080/ws/audio");
         ws.binaryType = "arraybuffer";
 
-        ws.onopen = () => console.log("✅ Connected to WebSocket");
-        ws.onclose = () => console.log("❌ WebSocket closed");
-        ws.onerror = e => console.error("WebSocket error:", e);
+        ws.onopen = () => {
+            log("✅ Connected to WebSocket");
+            statusEl.innerText = "Status: Connected";
+            sendBtn.disabled = false;
+            stopBtn.disabled = false;
+        };
+
+        ws.onclose = () => {
+            log("❌ WebSocket closed");
+            statusEl.innerText = "Status: Disconnected";
+            sendBtn.disabled = true;
+            stopBtn.disabled = true;
+            resetAudioBar();
+        };
+
+        ws.onerror = (e) => {
+            log("❌ WebSocket error: " + e);
+        };
 
         ws.onmessage = async (event) => {
-            if (event.data instanceof ArrayBuffer) {
-                const audioData = event.data;
-                playAudio(audioData);
-            } else {
-                console.log("Received:", event.data);
+            if (!(event.data instanceof ArrayBuffer)) {
+                log("⚠️ Received non-binary message: " + event.data);
+                return;
             }
+            log("🔊 Received audio bytes: " + event.data.byteLength);
+            playAudio(event.data);
         };
     });
 
-    document.getElementById('sendBtn').addEventListener('click', () => {
+    sendBtn.addEventListener("click", () => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             alert("WebSocket is not connected!");
             return;
         }
-
-        // Send dummy audio bytes (can be anything for mock)
-        const dummyBytes = new Uint8Array([1, 2, 3, 4]);
+        const dummyBytes = new Uint8Array([1,2,3,4,5,6]); // backend ignores for mock
         ws.send(dummyBytes);
-        console.log("Sent dummy audio chunk");
+        log("📤 Sent dummy audio chunk");
     });
 
-    function playAudio(arrayBuffer) {
-        audioContext.decodeAudioData(arrayBuffer)
-            .then(buffer => {
-                const source = audioContext.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioContext.destination);
-                source.start();
-            })
-            .catch(err => console.error("Failed to play audio:", err));
+    stopBtn.addEventListener("click", () => {
+        if (currentSource) {
+            currentSource.stop();
+            currentSource.disconnect();
+            currentSource = null;
+            log("⏹ Stopped audio playback");
+            resetAudioBar();
+        }
+    });
+
+    async function playAudio(arrayBuffer) {
+        try {
+            if (currentSource) {
+                currentSource.stop();
+                currentSource.disconnect();
+            }
+
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+
+            currentSource = source;
+            log("▶️ Playing audio");
+
+            const startTime = audioContext.currentTime;
+            const duration = audioBuffer.duration;
+
+            cancelAnimationFrame(animationId);
+
+            function updateProgress() {
+                const elapsed = audioContext.currentTime - startTime;
+                audioProgress.style.width = Math.min((elapsed / duration) * 100, 100) + "%";
+                if (elapsed < duration) {
+                    animationId = requestAnimationFrame(updateProgress);
+                }
+            }
+            updateProgress();
+
+            source.onended = () => {
+                currentSource = null;
+                resetAudioBar();
+                log("✅ Audio finished");
+            };
+        } catch (err) {
+            log("❌ Failed to play audio: " + err);
+        }
+    }
+
+    function resetAudioBar() {
+        audioProgress.style.width = "0%";
+        cancelAnimationFrame(animationId);
     }
 </script>
 </body>

@@ -5,11 +5,14 @@ import com.aistream.utils.WavUtil;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class StreamingSTTService {
+
+    private static final boolean MOCK = true;
 
     private final OpenAIClient openAIClient;
     private final List<byte[]> audioBuffer = new ArrayList<>();
@@ -23,6 +26,10 @@ public class StreamingSTTService {
     }
 
     public Mono<String> processBufferedAudio() {
+        if (MOCK) {
+            return mockTranscription();
+        }
+
         byte[] pcm;
 
         synchronized (this) {
@@ -41,7 +48,13 @@ public class StreamingSTTService {
             audioBuffer.clear();
         }
 
-        byte[] wav = WavUtil.wrapPcm(pcm);
-        return openAIClient.transcribeWav(wav);
+        return openAIClient.transcribeWav(WavUtil.wrapPcm(pcm));
+    }
+
+    /* ================= MOCK ================= */
+
+    private Mono<String> mockTranscription() {
+        return Mono.just("This is a mocked transcription")
+                .delayElement(Duration.ofMillis(200));
     }
 }

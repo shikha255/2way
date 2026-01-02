@@ -95,22 +95,4 @@ public class OpenAIClient {
             return "";
         }
     }
-
-    public Mono<String> mockTranscription(byte[] audioChunk) {
-        // You can ignore the actual bytes and just return a simulated string
-        return Mono.just("This is a mocked transcription")
-                .delayElement(Duration.ofMillis(200)); // simulate processing
-    }
-
-    /**
-     * Mock LLM streaming response (for testing without OpenAI API)
-     * @param userText The user input text
-     * @return Flux<String> emitting tokens
-     */
-    public Flux<String> mockStreamResponse(String userText) {
-        String response = "This is a mocked LLM response for testing purposes.";
-        String[] tokens = response.split(" ");
-        return Flux.fromArray(tokens)
-                .delayElements(Duration.ofMillis(150)); // simulate streaming delay
-    }
 }
